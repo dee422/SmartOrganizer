@@ -13,8 +13,8 @@ android {
 
     defaultConfig {
         applicationId = "com.dee.android.pbl.smartorganizer"
-        minSdk = 24
-        targetSdk = 36
+        minSdk = 26
+        targetSdk = 34
         versionCode = 1
         versionName = "1.0"
 
@@ -64,4 +64,7 @@ dependencies {
     kapt("androidx.room:room-compiler:$room_version")
     implementation("io.coil-kt:coil-compose:2.5.0")
     implementation("androidx.compose.material:material-icons-extended:1.6.0")
+
+    implementation("androidx.compose.material3:material3:1.2.0") // 确保版本较新
+    implementation("androidx.core:core-splashscreen:1.0.1")
 }

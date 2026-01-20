@@ -5,7 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [Container::class], version = 1)
+@Database(entities = [Container::class, StorageItem::class], version = 2, exportSchema = false) // 💡 版本升到 2
 abstract class AppDatabase : RoomDatabase() {
     abstract fun containerDao(): ContainerDao
 
