@@ -67,4 +67,7 @@ dependencies {
 
     implementation("androidx.compose.material3:material3:1.2.0") // 确保版本较新
     implementation("androidx.core:core-splashscreen:1.0.1")
+
+    // 💡 添加 Gson 库用于 JSON 转换
+    implementation("com.google.code.gson:gson:2.10.1")
 }

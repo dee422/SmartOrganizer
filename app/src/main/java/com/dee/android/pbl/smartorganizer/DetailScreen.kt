@@ -16,6 +16,12 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
+import java.time.Instant
+import java.time.ZoneId
+import androidx.compose.material.icons.filled.DateRange // 💡 导入日历图标
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DatePicker
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -25,17 +31,63 @@ fun DetailScreen(
     onBack: () -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
-    val itemList = remember { mutableStateListOf<StorageItem>() }
+    val itemsList = remember { mutableStateListOf<StorageItem>() }
 
     // 输入框状态
     var itemName by remember { mutableStateOf("") }
     var expiryDate by remember { mutableStateOf("") } // 默认可以为空，即无限期
     var note by remember { mutableStateOf("") }
 
+    // 💡 1. 日历弹窗控制状态
+    var showDatePicker by remember { mutableStateOf(false) }
+    val datePickerState = rememberDatePickerState()
+
+    // 💡 2. 格式化日期的工具 (yyyy-MM-dd)
+    val formatter = remember { DateTimeFormatter.ofPattern("yyyy-MM-dd") }
+
+    // 建议在 DetailScreen 顶部这样定义刷新逻辑
+    fun refreshItems() {
+        coroutineScope.launch {
+            // 直接从数据库获取最新的、带有自增 ID 的完整列表
+            val newData = containerDao.getItemsByContainer(container.id)
+            itemsList.clear()
+            itemsList.addAll(newData)
+        }
+    }
+
+    // 💡 3. 初次进入页面时加载数据
+    LaunchedEffect(container.id) {
+        refreshItems()
+    }
+
+    var itemToDelete by remember { mutableStateOf<StorageItem?>(null) } // 💡 新增状态
+
+    // --- 💡 新增删除确认弹窗 ---
+    if (itemToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { itemToDelete = null },
+            title = { Text("确认删除物品") },
+            text = { Text("确定要从柜子中移除「${itemToDelete!!.name}」吗？") },
+            confirmButton = {
+                TextButton(onClick = {
+                    coroutineScope.launch {
+                        containerDao.deleteItem(itemToDelete!!)
+                        // 刷新列表的逻辑...
+                        refreshItems()
+                        itemToDelete = null
+                    }
+                }) { Text("确定", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { itemToDelete = null }) { Text("取消") }
+            }
+        )
+    }
+
     // 初始加载该柜子的物品
     LaunchedEffect(container.id) {
-        itemList.clear()
-        itemList.addAll(containerDao.getItemsByContainer(container.id))
+        itemsList.clear()
+        itemsList.addAll(containerDao.getItemsByContainer(container.id))
     }
 
     Scaffold(
@@ -56,37 +108,51 @@ fun DetailScreen(
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("添加新物品", style = MaterialTheme.typography.titleMedium)
                     OutlinedTextField(value = itemName, onValueChange = { itemName = it }, label = { Text("物品名称") }, modifier = Modifier.fillMaxWidth())
-                    Row(modifier = Modifier.fillMaxWidth()) {
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        // 💡 4. 修改后的日期输入框
                         OutlinedTextField(
                             value = expiryDate,
                             onValueChange = { expiryDate = it },
                             label = { Text("过期日期 (YYYY-MM-DD)") },
                             modifier = Modifier.weight(1f),
-                            placeholder = { Text("不填为无限期") }
+                            placeholder = { Text("不填为无限期") },
+                            // 添加末尾图标按钮
+                            trailingIcon = {
+                                IconButton(onClick = { showDatePicker = true }) {
+                                    Icon(Icons.Default.DateRange, contentDescription = "选择日期")
+                                }
+                            }
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        OutlinedTextField(value = note, onValueChange = { note = it }, label = { Text("备注") }, modifier = Modifier.weight(1f))
+                        OutlinedTextField(
+                            value = note,
+                            onValueChange = { note = it },
+                            label = { Text("备注") },
+                            modifier = Modifier.weight(1f)
+                        )
                     }
-                    Button(
-                        onClick = {
-                            if (itemName.isNotBlank()) {
-                                coroutineScope.launch {
-                                    val newItem = StorageItem(
+                    // 找到添加物品的 Button
+                    Button(onClick = {
+                        if (itemName.isNotBlank()) {
+                            coroutineScope.launch {
+                                // 1. 插入数据库
+                                containerDao.insertItem(
+                                    StorageItem(
                                         containerId = container.id,
                                         name = itemName,
                                         expiryDate = if (expiryDate.isBlank()) "无限期" else expiryDate,
                                         note = note
                                     )
-                                    containerDao.insertItem(newItem)
-                                    itemList.add(newItem)
-                                    // 清空输入
-                                    itemName = ""; expiryDate = ""; note = ""
-                                }
+                                )
+                                // 2. 💡 关键：清空输入框并【立即调用刷新函数】
+                                itemName = ""
+                                expiryDate = ""
+                                note = ""
+
+                                refreshItems() // 重新从数据库读取，确保 UI 上的所有 item 都有真实的 ID
                             }
-                        },
-                        modifier = Modifier.align(Alignment.End).padding(top = 8.dp)
-                    ) {
-                        Text("添加")
+                        }
+                    }) { Text("添加物品")
                     }
                 }
             }
@@ -95,7 +161,7 @@ fun DetailScreen(
 
             // --- 物品列表区域 ---
             LazyColumn {
-                items(itemList) { item ->
+                items(itemsList) { item ->
                     ListItem(
                         headlineContent = { Text(item.name) },
                         supportingContent = {
@@ -113,13 +179,8 @@ fun DetailScreen(
                             }
                         },
                         trailingContent = {
-                            IconButton(onClick = {
-                                coroutineScope.launch {
-                                    containerDao.deleteItem(item)
-                                    itemList.remove(item)
-                                }
-                            }) {
-                                Icon(Icons.Default.Delete, contentDescription = "删除", tint = Color.Gray)
+                            IconButton(onClick = { itemToDelete = item }) { // 💡 改为赋值给状态，不直接删除
+                                Icon(Icons.Default.Delete, contentDescription = "删除")
                             }
                         }
                     )

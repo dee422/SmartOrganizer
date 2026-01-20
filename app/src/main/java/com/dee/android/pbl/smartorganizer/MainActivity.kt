@@ -1,5 +1,6 @@
 package com.dee.android.pbl.smartorganizer
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Bundle
@@ -32,6 +33,9 @@ import com.dee.android.pbl.smartorganizer.ui.theme.SmartOrganizerTheme
 import kotlinx.coroutines.launch
 import java.io.ByteArrayOutputStream
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import com.google.gson.Gson
+import android.content.Intent
+import androidx.compose.material.icons.filled.Share
 
 class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalFoundationApi::class)
@@ -79,6 +83,47 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            // --- 在 setContent 内部，SmartOrganizerTheme 之前定义 ---
+            val coroutineScope = rememberCoroutineScope() // 💡 专门为 Compose 按钮点击准备的协程作用域
+
+            fun exportData(context: Context, containerDao: ContainerDao) {
+                coroutineScope.launch {
+                    try {
+                        val allContainers = containerDao.getAll()
+                        // 💡 关键修改：备份时去除图片字节数据，防止数据量过大导致系统崩溃
+                        val containersMinimal = allContainers.map {
+                            it.copy(imageData = null)
+                        }
+
+                        val allItems = mutableListOf<StorageItem>()
+                        allContainers.forEach { container ->
+                            allItems.addAll(containerDao.getItemsByContainer(container.id))
+                        }
+
+                        val backupMap = mapOf(
+                            "app" to "SmartOrganizer",
+                            "date" to java.time.LocalDate.now().toString(),
+                            "containers" to containersMinimal,
+                            "items" to allItems
+                        )
+
+                        val jsonString = Gson().toJson(backupMap)
+
+                        val sendIntent = Intent().apply {
+                            action = Intent.ACTION_SEND
+                            putExtra(Intent.EXTRA_TEXT, jsonString)
+                            type = "text/plain"
+                        }
+                        // 💡 增加一个判断，确保有应用可以接收
+                        val shareIntent = Intent.createChooser(sendIntent, "导出文本备份 (不含照片)")
+                        context.startActivity(shareIntent)
+
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "导出失败: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+
             // 初始加载
             LaunchedEffect(Unit) {
                 containerList.addAll(containerDao.getAll())
@@ -121,7 +166,22 @@ class MainActivity : ComponentActivity() {
                     if (currentContainer == null) {
                         // 【主页面】
                         Column(modifier = Modifier.padding(16.dp)) {
-                            Text("🏠 家庭收纳助手", style = MaterialTheme.typography.headlineMedium)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("🏠 家庭收纳助手", style = MaterialTheme.typography.headlineMedium)
+
+                                // 💡 备份按钮
+                                IconButton(onClick = { exportData(context, containerDao) }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Share,
+                                        contentDescription = "导出备份",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
 
                             // 搜索框
                             OutlinedTextField(
